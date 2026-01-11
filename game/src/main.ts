@@ -71,7 +71,7 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     if (this.isGameOver) return;
     const dt = delta / 1000;
 
