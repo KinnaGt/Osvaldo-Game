@@ -7,7 +7,6 @@ class MainScene extends Phaser.Scene {
   private readonly LANE_X = [200, 400, 600];
   private readonly SCREEN_HEIGHT = 600;
 
-  // Ajustes de Gameplay
   private readonly BASE_SCROLL_SPEED = 180;
   private readonly PLATFORM_GAP = 120;
   private readonly JUMP_DISTANCE_LIMIT = 150;
@@ -21,6 +20,7 @@ class MainScene extends Phaser.Scene {
   private lastSpawnLane: number = 1;
 
   // --- Referencias ---
+  private background!: Phaser.GameObjects.TileSprite; // NUEVO: Fondo infinito
   private player!: Phaser.GameObjects.Sprite;
   private platformGroup!: Phaser.GameObjects.Group;
   private scoreText!: Phaser.GameObjects.Text;
@@ -32,18 +32,26 @@ class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    if (!this.textures.exists('capsule')) {
-      const graphics = this.make.graphics({ x: 0, y: 0 }, false);
-      graphics.fillStyle(0xffffff);
-      graphics.fillRoundedRect(0, 0, 30, 50, 15);
-      graphics.generateTexture('capsule', 30, 50);
-    }
-    if (!this.textures.exists('platform')) {
-      const pGraphics = this.make.graphics({ x: 0, y: 0 }, false);
-      pGraphics.fillStyle(0x00ff00);
-      pGraphics.fillRoundedRect(0, 0, 100, 20, 5);
-      pGraphics.generateTexture('platform', 100, 20);
-    }
+    // --- CARGA DE ASSETS ---
+    // Asegúrate de poner las imágenes en la carpeta /public/assets/
+
+    // // Cargar Fondo
+    // this.load.image('bg_space', 'assets/background.png');
+
+    // // Cargar Player
+    // this.load.image('player_img', 'assets/player.png');
+
+    // // Cargar Plataforma
+    // this.load.image('platform_img', 'assets/platform.png');
+
+    // Background (Estrellas)
+    this.load.image('bg_space', 'https://labs.phaser.io/assets/skies/space3.png');
+
+    // Player (Un alien verde)
+    this.load.image('player_img', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+
+    // Platform (Una barra metálica)
+    this.load.image('platform_img', 'https://labs.phaser.io/assets/sprites/platform.png');
   }
 
   create() {
@@ -51,19 +59,36 @@ class MainScene extends Phaser.Scene {
     this.input.removeAllListeners();
     this.resetGameValues();
 
-    this.player = this.add.sprite(this.LANE_X[1], 400, 'capsule');
+    // 1. FONDO INFINITO (TileSprite)
+    // Se coloca en el centro (400, 300) con el tamaño total de la pantalla
+    this.background = this.add.tileSprite(400, 300, 800, 600, 'bg_space');
+    this.background.setDepth(-1); // Asegurar que está detrás de todo
+
+    // 2. Crear Jugador
+    this.player = this.add.sprite(this.LANE_X[1], 400, 'player_img');
     this.player.setOrigin(0.5, 1);
     this.player.setDepth(10);
+    // Forzamos el tamaño visual para que coincida con la lógica (30x50)
+    // Esto evita bugs si tu imagen es muy grande (ej. 500x500)
+    this.player.setDisplaySize(30, 50);
 
+    // 3. Crear Grupo
     this.platformGroup = this.add.group({
       defaultKey: null,
       maxSize: 30,
       runChildUpdate: true,
     });
 
+    // 4. Generar Nivel
     this.initPlatforms();
+
     this.scoreText = this.add
-      .text(20, 20, 'Score: 0', { fontSize: '24px', color: '#fff' })
+      .text(20, 20, 'Score: 0', {
+        fontSize: '24px',
+        color: '#fff',
+        stroke: '#000', // Borde negro para que se lea mejor sobre cualquier fondo
+        strokeThickness: 4,
+      })
       .setDepth(20);
 
     if (this.input.keyboard) {
@@ -72,22 +97,24 @@ class MainScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
+    // _time soluciona el error de Vercel
     if (this.isGameOver) return;
     const dt = delta / 1000;
 
-    // --- CORRECCIÓN CÁMARA ---
-    // La velocidad SOLO depende del puntaje/tiempo.
-    // Eliminada la lógica que miraba si player.y < threshold.
+    // Velocidad
     const difficultyMultiplier = 1 + this.score * 0.005;
     this.gameScrollSpeed = this.BASE_SCROLL_SPEED * difficultyMultiplier;
 
-    // Mover Plataformas (El mundo baja constantemente)
+    // --- MOVIMIENTO DEL FONDO (Parallax) ---
+    // Movemos la textura del fondo para dar sensación de subir.
+    // Multiplicamos por 0.5 para que el fondo se mueva más lento que las plataformas (profundidad)
+    this.background.tilePositionY -= this.gameScrollSpeed * dt * 0.5;
+
+    // Mover Plataformas
     this.platformGroup.children.each((child: any) => {
       const platform = child as Phaser.GameObjects.Sprite;
       if (platform.active) {
         platform.y += this.gameScrollSpeed * dt;
-
-        // Reciclar plataforma
         if (platform.y > this.SCREEN_HEIGHT + 100) {
           this.respawnPlatform(platform);
         }
@@ -95,12 +122,9 @@ class MainScene extends Phaser.Scene {
       return true;
     });
 
-    // Mover Jugador (Gravedad del Scroll)
-    // Si no está saltando, el jugador baja solidario con el mundo (simulando que la cámara sube)
+    // Mover Jugador
     if (!this.isJumping) {
       this.player.y += this.gameScrollSpeed * dt;
-
-      // "Pegar" jugador a la plataforma para evitar micro-deslizamientos
       if (this.currentPlatformNode && this.currentPlatformNode.active) {
         this.player.y = this.currentPlatformNode.y;
       }
@@ -108,7 +132,6 @@ class MainScene extends Phaser.Scene {
 
     // Límites
     if (this.player.y > this.SCREEN_HEIGHT + 50) this.gameOver('¡Caíste al vacío!');
-    // Opcional: Si toca el techo muy arriba, muere (o se bloquea, aquí lo matamos para dificultad)
     if (this.player.y < -20) this.gameOver('¡Te aplastó el techo!');
 
     // Input
@@ -121,13 +144,13 @@ class MainScene extends Phaser.Scene {
   private tryJump(direction: number) {
     const targetLane = (this.currentLane + direction + 3) % 3;
 
-    // Detectar Wrap (Pac-Man)
     const isWrappingRight = this.currentLane === 2 && targetLane === 0;
     const isWrappingLeft = this.currentLane === 0 && targetLane === 2;
 
     const targetPlatform = this.findTargetPlatform(targetLane);
 
     if (targetPlatform) {
+      // SALTO VÁLIDO
       this.isJumping = true;
       this.currentLane = targetLane;
       this.currentPlatformNode = targetPlatform;
@@ -136,7 +159,6 @@ class MainScene extends Phaser.Scene {
       const midY = (this.player.y + targetPlatform.y) / 2 - 20;
 
       if (isWrappingRight) {
-        // Wrap Derecha -> Izquierda
         this.tweens.chain({
           targets: this.player,
           tweens: [
@@ -152,7 +174,6 @@ class MainScene extends Phaser.Scene {
           onComplete: () => this.finishJump(),
         });
       } else if (isWrappingLeft) {
-        // Wrap Izquierda -> Derecha
         this.tweens.chain({
           targets: this.player,
           tweens: [
@@ -168,7 +189,6 @@ class MainScene extends Phaser.Scene {
           onComplete: () => this.finishJump(),
         });
       } else {
-        // Salto Normal
         this.tweens.add({
           targets: this.player,
           x: this.LANE_X[targetLane],
@@ -176,14 +196,15 @@ class MainScene extends Phaser.Scene {
           duration: 150,
           ease: 'Sine.easeOut',
           onUpdate: () => {
-            this.player.scaleY = 1.2;
-            this.player.scaleX = 0.8;
+            // Pequeño efecto de "squash & stretch" al saltar
+            this.player.scaleY = (50 / 50) * 1.2; // Base height 50
+            this.player.scaleX = (30 / 30) * 0.8; // Base width 30
           },
           onComplete: () => this.finishJump(),
         });
       }
     } else {
-      // Salto al vacío (Muerte)
+      // SALTO AL VACÍO
       this.isJumping = true;
       let targetX = this.LANE_X[targetLane];
       if (isWrappingRight) targetX = 850;
@@ -204,9 +225,8 @@ class MainScene extends Phaser.Scene {
 
   private finishJump() {
     this.isJumping = false;
-    this.player.scaleY = 1;
-    this.player.scaleX = 1;
-    // Asegurar snap final
+    // Restaurar escala original basada en setDisplaySize
+    this.player.setDisplaySize(30, 50);
     if (this.currentPlatformNode) this.player.y = this.currentPlatformNode.y;
   }
 
@@ -238,7 +258,6 @@ class MainScene extends Phaser.Scene {
   private initPlatforms() {
     this.createPlatformAtHeight(400, 1);
     this.lastSpawnLane = 1;
-
     for (let i = 1; i <= 7; i++) {
       const targetY = 400 - i * this.PLATFORM_GAP;
       this.spawnProceduralPlatform(targetY);
@@ -250,13 +269,17 @@ class MainScene extends Phaser.Scene {
     do {
       newLane = Phaser.Math.Between(0, 2);
     } while (newLane === this.lastSpawnLane);
-
     this.createPlatformAtHeight(fixedY, newLane);
     this.lastSpawnLane = newLane;
   }
 
   private createPlatformAtHeight(y: number, lane: number) {
-    const p = this.add.sprite(this.LANE_X[lane], y, 'platform');
+    // Usar la imagen 'platform_img'
+    const p = this.add.sprite(this.LANE_X[lane], y, 'platform_img');
+
+    // Ajustar tamaño visual para que coincida con la hitbox lógica (100x20)
+    p.setDisplaySize(100, 20);
+
     this.platformGroup.add(p);
 
     if (y === 400 && this.currentPlatformNode === null) {
@@ -330,7 +353,7 @@ class MainScene extends Phaser.Scene {
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  backgroundColor: '#1a1a1a',
+  backgroundColor: '#000000', // Negro de fondo por si la imagen tarda en cargar
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
