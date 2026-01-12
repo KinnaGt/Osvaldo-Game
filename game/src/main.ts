@@ -20,7 +20,7 @@ class MainScene extends Phaser.Scene {
   private lastSpawnLane: number = 1;
 
   // --- Referencias ---
-  private background!: Phaser.GameObjects.TileSprite; // NUEVO: Fondo infinito
+  private background!: Phaser.GameObjects.TileSprite;
   private player!: Phaser.GameObjects.Sprite;
   private platformGroup!: Phaser.GameObjects.Group;
   private scoreText!: Phaser.GameObjects.Text;
@@ -33,25 +33,13 @@ class MainScene extends Phaser.Scene {
 
   preload() {
     // --- CARGA DE ASSETS ---
-    // Asegúrate de poner las imágenes en la carpeta /public/assets/
-
-    // // Cargar Fondo
+    this.load.image('player_img', 'assets/osvaldo2.png');
+    this.load.image('platform_img', 'assets/platform2.png');
+    // Usa tu fondo local si lo tienes, sino el placeholder
     // this.load.image('bg_space', 'assets/background.png');
-
-    // // Cargar Player
-    // this.load.image('player_img', 'assets/player.png');
-
-    // // Cargar Plataforma
-    // this.load.image('platform_img', 'assets/platform.png');
-
-    // Background (Estrellas)
-    this.load.image('bg_space', 'https://labs.phaser.io/assets/skies/space3.png');
-
-    // Player (Un alien verde)
-    this.load.image('player_img', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
-
-    // Platform (Una barra metálica)
-    this.load.image('platform_img', 'https://labs.phaser.io/assets/sprites/platform.png');
+    // this.load.image('bg_space', 'https://labs.phaser.io/assets/skies/sky4.png');
+    this.load.image('bg_space', 'https://labs.phaser.io/assets/skies/nebula.jpg');
+    // this.load.image('bg_space', 'https://labs.phaser.io/assets/skies/clouds.png');
   }
 
   create() {
@@ -59,18 +47,15 @@ class MainScene extends Phaser.Scene {
     this.input.removeAllListeners();
     this.resetGameValues();
 
-    // 1. FONDO INFINITO (TileSprite)
-    // Se coloca en el centro (400, 300) con el tamaño total de la pantalla
+    // 1. FONDO INFINITO
     this.background = this.add.tileSprite(400, 300, 800, 600, 'bg_space');
-    this.background.setDepth(-1); // Asegurar que está detrás de todo
+    this.background.setDepth(-1);
 
     // 2. Crear Jugador
     this.player = this.add.sprite(this.LANE_X[1], 400, 'player_img');
     this.player.setOrigin(0.5, 1);
     this.player.setDepth(10);
-    // Forzamos el tamaño visual para que coincida con la lógica (30x50)
-    // Esto evita bugs si tu imagen es muy grande (ej. 500x500)
-    this.player.setDisplaySize(30, 50);
+    this.player.setDisplaySize(60, 100);
 
     // 3. Crear Grupo
     this.platformGroup = this.add.group({
@@ -86,7 +71,7 @@ class MainScene extends Phaser.Scene {
       .text(20, 20, 'Score: 0', {
         fontSize: '24px',
         color: '#fff',
-        stroke: '#000', // Borde negro para que se lea mejor sobre cualquier fondo
+        stroke: '#000',
         strokeThickness: 4,
       })
       .setDepth(20);
@@ -97,7 +82,6 @@ class MainScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
-    // _time soluciona el error de Vercel
     if (this.isGameOver) return;
     const dt = delta / 1000;
 
@@ -105,9 +89,7 @@ class MainScene extends Phaser.Scene {
     const difficultyMultiplier = 1 + this.score * 0.005;
     this.gameScrollSpeed = this.BASE_SCROLL_SPEED * difficultyMultiplier;
 
-    // --- MOVIMIENTO DEL FONDO (Parallax) ---
-    // Movemos la textura del fondo para dar sensación de subir.
-    // Multiplicamos por 0.5 para que el fondo se mueva más lento que las plataformas (profundidad)
+    // Movimiento Fondo
     this.background.tilePositionY -= this.gameScrollSpeed * dt * 0.5;
 
     // Mover Plataformas
@@ -134,10 +116,17 @@ class MainScene extends Phaser.Scene {
     if (this.player.y > this.SCREEN_HEIGHT + 50) this.gameOver('¡Caíste al vacío!');
     if (this.player.y < -20) this.gameOver('¡Te aplastó el techo!');
 
-    // Input
+    // --- INPUT Y ROTACIÓN ---
     if (!this.isJumping) {
-      if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) this.tryJump(-1);
-      else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) this.tryJump(1);
+      if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
+        // Si el sprite base mira a la izquierda, false es NO voltear
+        this.player.setFlipX(false);
+        this.tryJump(-1);
+      } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
+        // true es VOLTEAR horizontalmente (mirar a la derecha)
+        this.player.setFlipX(true);
+        this.tryJump(1);
+      }
     }
   }
 
@@ -189,17 +178,13 @@ class MainScene extends Phaser.Scene {
           onComplete: () => this.finishJump(),
         });
       } else {
+        // SALTO NORMAL
         this.tweens.add({
           targets: this.player,
           x: this.LANE_X[targetLane],
           y: targetPlatform.y,
           duration: 150,
           ease: 'Sine.easeOut',
-          onUpdate: () => {
-            // Pequeño efecto de "squash & stretch" al saltar
-            this.player.scaleY = (50 / 50) * 1.2; // Base height 50
-            this.player.scaleX = (30 / 30) * 0.8; // Base width 30
-          },
           onComplete: () => this.finishJump(),
         });
       }
@@ -225,8 +210,7 @@ class MainScene extends Phaser.Scene {
 
   private finishJump() {
     this.isJumping = false;
-    // Restaurar escala original basada en setDisplaySize
-    this.player.setDisplaySize(30, 50);
+    this.player.setDisplaySize(60, 100);
     if (this.currentPlatformNode) this.player.y = this.currentPlatformNode.y;
   }
 
@@ -274,12 +258,8 @@ class MainScene extends Phaser.Scene {
   }
 
   private createPlatformAtHeight(y: number, lane: number) {
-    // Usar la imagen 'platform_img'
     const p = this.add.sprite(this.LANE_X[lane], y, 'platform_img');
-
-    // Ajustar tamaño visual para que coincida con la hitbox lógica (100x20)
     p.setDisplaySize(100, 20);
-
     this.platformGroup.add(p);
 
     if (y === 400 && this.currentPlatformNode === null) {
@@ -353,7 +333,7 @@ class MainScene extends Phaser.Scene {
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  backgroundColor: '#000000', // Negro de fondo por si la imagen tarda en cargar
+  backgroundColor: '#000000',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
